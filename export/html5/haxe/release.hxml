@@ -12,6 +12,8 @@
 -D hscript=2.4.0
 -cp /home/nikita/haxelib/flixel-addons/2,11,0
 -D flixel-addons=2.11.0
+-cp /home/nikita/haxelib/udprotean/0,3,3/src
+-D udprotean=0.3.3
 -cp source
 -D tools=7.9.0
 -D lime-canvas
@@ -28,8 +30,6 @@
 -D web
 --remap flash:openfl
 --macro flixel.system.macros.FlxDefines.run()
---connect
-6000
 -js export/html5/bin/PokemonHyperiaMMO.js
 -cp export/html5/haxe
 -D html5
