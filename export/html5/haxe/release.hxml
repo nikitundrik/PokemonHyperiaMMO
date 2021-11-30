@@ -1,9 +1,6 @@
 -main ApplicationMain 
 -cp /home/nikita/haxelib/flixel/4,10,0
 -D flixel=4.10.0
---macro openfl.utils._internal.ExtraParamsMacro.include()
--cp /home/nikita/haxelib/openfl/9,1,0/src
--D openfl=9.1.0
 --macro lime._internal.macros.DefineMacro.run()
 -cp /home/nikita/haxelib/lime/7,9,0/src
 -D lime=7.9.0
@@ -12,8 +9,11 @@
 -D hscript=2.4.0
 -cp /home/nikita/haxelib/flixel-addons/2,11,0
 -D flixel-addons=2.11.0
--cp /home/nikita/haxelib/udprotean/0,3,3/src
--D udprotean=0.3.3
+-cp /home/nikita/haxelib/extension-networking/1,4,2/src
+-D extension-networking=1.4.2
+--macro openfl.utils._internal.ExtraParamsMacro.include()
+-cp /home/nikita/haxelib/openfl/9,1,0/src
+-D openfl=9.1.0
 -cp source
 -D tools=7.9.0
 -D lime-canvas

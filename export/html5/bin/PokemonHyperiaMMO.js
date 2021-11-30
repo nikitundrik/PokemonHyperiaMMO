@@ -913,7 +913,7 @@ ApplicationMain.main = function() {
 ApplicationMain.create = function(config) {
 	var app = new openfl_display_Application();
 	ManifestResources.init(config);
-	app.meta.h["build"] = "116";
+	app.meta.h["build"] = "2";
 	app.meta.h["company"] = "HaxeFlixel";
 	app.meta.h["file"] = "PokemonHyperiaMMO";
 	app.meta.h["name"] = "PokemonHyperiaMMO";
@@ -7546,7 +7546,6 @@ PlayState.prototype = $extend(flixel_FlxState.prototype,{
 	,buildings: null
 	,player: null
 	,skovonNPCs: null
-	,skovonNPCsArr: null
 	,isTextOnScreen: null
 	,dialogueHUD: null
 	,talkText: null
@@ -7557,7 +7556,6 @@ PlayState.prototype = $extend(flixel_FlxState.prototype,{
 		this.roads.follow();
 		this.player = new Player();
 		this.skovonNPCs = new flixel_group_FlxTypedGroup();
-		this.skovonNPCsArr = this.skovonNPCs.members;
 		this.map.loadEntities($bind(this,this.placeEntities),"entities");
 		this.addSkovonNPCs();
 		this.dialogueHUD = new DialogueHUD();
@@ -71180,7 +71178,7 @@ var lime_utils_AssetCache = function() {
 	this.audio = new haxe_ds_StringMap();
 	this.font = new haxe_ds_StringMap();
 	this.image = new haxe_ds_StringMap();
-	this.version = 897310;
+	this.version = 284461;
 };
 $hxClasses["lime.utils.AssetCache"] = lime_utils_AssetCache;
 lime_utils_AssetCache.__name__ = "lime.utils.AssetCache";
@@ -117861,6 +117859,7 @@ AssetPaths.data_goes_here__txt = "assets/data/data-goes-here.txt";
 AssetPaths.HyperiaMaps__ogmo = "assets/data/HyperiaMaps.ogmo";
 AssetPaths.SkovonCity__json = "assets/data/SkovonCity.json";
 AssetPaths.images_go_here__txt = "assets/images/images-go-here.txt";
+AssetPaths.NPCCasual1__png = "assets/images/NPCCasual1.png";
 AssetPaths.PlayerCharacter__png = "assets/images/PlayerCharacter.png";
 AssetPaths.Tileset__png = "assets/images/Tileset.png";
 AssetPaths.music_goes_here__txt = "assets/music/music-goes-here.txt";
