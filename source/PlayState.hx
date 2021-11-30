@@ -3,11 +3,16 @@ package;
 // Import libraries
 import Player;
 import flixel.FlxG;
+import flixel.FlxSprite;
 import flixel.FlxState;
 import flixel.addons.editors.ogmo.FlxOgmo3Loader;
 import flixel.group.FlxGroup.FlxTypedGroup;
 import flixel.text.FlxText;
 import flixel.tile.FlxTilemap;
+import networking.Network;
+import networking.sessions.Session;
+import networking.utils.NetworkEvent;
+import networking.utils.NetworkMode;
 
 class PlayState extends FlxState
 {
@@ -20,6 +25,9 @@ class PlayState extends FlxState
 	var isTextOnScreen:Bool;
 	var dialogueHUD:DialogueHUD;
 	var talkText:FlxText;
+	var otherPlayers:FlxTypedGroup<FlxSprite>;
+	var playerID:Int;
+	var client:Session;
 
 	override public function create()
 	{
@@ -49,6 +57,26 @@ class PlayState extends FlxState
 		talkText.scrollFactor.set(0, 0);
 		talkText.visible = false;
 
+		// Creates the client
+		client = Network.registerSession(NetworkMode.CLIENT, {ip: '127.0.0.1', port: 8888, flash_policy_file_url: "http://127.0.0.1:9999/crossdomain.xml"});
+		// Event that starts when server sends a message
+		client.addEventListener(NetworkEvent.MESSAGE_RECEIVED, function(event:NetworkEvent)
+		{
+			// If case is new player, add a player
+			if (event.data.case1 == "new player")
+			{
+				var playersArr:Array<FlxSprite> = event.data.players1;
+				for (i in playersArr)
+				{
+					i.loadGraphic(AssetPaths.PlayerCharacter__png, true, 32, 32);
+					otherPlayers.add(i);
+				}
+				playerID = event.data.playerID;
+				trace("Player ID: " + playerID);
+			}
+		});
+		client.start();
+
 		// Add objects to the game
 		add(roads);
 		add(buildings);
@@ -56,6 +84,7 @@ class PlayState extends FlxState
 		add(skovonNPCs);
 		add(dialogueHUD);
 		add(talkText);
+		add(otherPlayers);
 
 		// Make the camera follow player
 		FlxG.camera.follow(player, TOPDOWN, 1);
@@ -116,6 +145,7 @@ class PlayState extends FlxState
 			FlxG.overlap(player, skovonNPCs, talkWithNPC);
 			if (!FlxG.overlap(player, skovonNPCs))
 				talkText.visible = false;
+			client.send({id: playerID, x: player.x, y: player.y});
 		}
 	}
 

@@ -913,7 +913,7 @@ ApplicationMain.main = function() {
 ApplicationMain.create = function(config) {
 	var app = new openfl_display_Application();
 	ManifestResources.init(config);
-	app.meta.h["build"] = "2";
+	app.meta.h["build"] = "3";
 	app.meta.h["company"] = "HaxeFlixel";
 	app.meta.h["file"] = "PokemonHyperiaMMO";
 	app.meta.h["name"] = "PokemonHyperiaMMO";
@@ -7562,6 +7562,8 @@ PlayState.prototype = $extend(flixel_FlxState.prototype,{
 		this.talkText = new flixel_text_FlxText(0,200,null,"Press Z to talk");
 		this.talkText.scrollFactor.set(0,0);
 		this.talkText.set_visible(false);
+		var client = networking_Network.registerSession(networking_utils_NetworkMode.CLIENT,{ ip : "127.0.0.1", port : 8888, flash_policy_file_url : "http://127.0.0.1:9999/crossdomain.xml"});
+		client.start();
 		this.add(this.roads);
 		this.add(this.buildings);
 		this.add(this.player);
@@ -71178,7 +71180,7 @@ var lime_utils_AssetCache = function() {
 	this.audio = new haxe_ds_StringMap();
 	this.font = new haxe_ds_StringMap();
 	this.image = new haxe_ds_StringMap();
-	this.version = 284461;
+	this.version = 974382;
 };
 $hxClasses["lime.utils.AssetCache"] = lime_utils_AssetCache;
 lime_utils_AssetCache.__name__ = "lime.utils.AssetCache";
@@ -73455,6 +73457,1119 @@ lime_utils_UInt8ClampedArray._clamp = function(_in) {
 	} else {
 		return _out;
 	}
+};
+var networking_Network = function() {
+};
+$hxClasses["networking.Network"] = networking_Network;
+networking_Network.__name__ = "networking.Network";
+networking_Network.registerSession = function(mode,params) {
+	var session = new networking_sessions_Session(mode,params);
+	networking_Network.sessions.push(session);
+	return session;
+};
+networking_Network.destroySession = function(session,auto_stop) {
+	if(auto_stop == null) {
+		auto_stop = true;
+	}
+	if(networking_Network.sessions.indexOf(session) == -1) {
+		return false;
+	}
+	if(auto_stop) {
+		session.stop();
+	}
+	HxOverrides.remove(networking_Network.sessions,session);
+	return HxOverrides.remove(networking_Network.sessions,session);
+};
+networking_Network.prototype = {
+	__class__: networking_Network
+};
+var networking_sessions_Session = function(mode,params) {
+	this.uuid = null;
+	this.clients = null;
+	this.network_item = null;
+	this.params = null;
+	this.mode = null;
+	openfl_events_EventDispatcher.call(this);
+	this._events_queue = new networking_utils_NetworkEventsQueue(this);
+	this.mode = mode;
+	this.params = params;
+	this.addCoreEventListeners();
+};
+$hxClasses["networking.sessions.Session"] = networking_sessions_Session;
+networking_sessions_Session.__name__ = "networking.sessions.Session";
+networking_sessions_Session.__super__ = openfl_events_EventDispatcher;
+networking_sessions_Session.prototype = $extend(openfl_events_EventDispatcher.prototype,{
+	_events_queue: null
+	,mode: null
+	,params: null
+	,network_item: null
+	,clients: null
+	,uuid: null
+	,send: function(obj) {
+		if(this.network_item == null) {
+			return;
+		}
+		if(obj == null) {
+			obj = { };
+		}
+		this.network_item.send(obj);
+	}
+	,start: function() {
+		this.stop();
+		this.params = this.params != null ? this.params : { };
+		switch(this.mode._hx_index) {
+		case 0:
+			this.network_item = new networking_sessions_server_Server(this,this.params.uuid,this.params.ip,Std.parseInt(this.params.port),this.params.max_connections,this.params.flash_policy_file_port);
+			break;
+		case 1:
+			this.network_item = new networking_sessions_client_Client(this,this.params.uuid,this.params.ip,Std.parseInt(this.params.port),this.params.flash_policy_file_url);
+			break;
+		}
+		return this;
+	}
+	,stop: function() {
+		if(this.mode == null || this.network_item == null) {
+			return this;
+		}
+		this.network_item.stop();
+		return this;
+	}
+	,disconnectClient: function(cl) {
+		switch(this.mode._hx_index) {
+		case 0:
+			if(this.network_item == null || cl == null) {
+				return;
+			}
+			(js_Boot.__cast(this.network_item , networking_sessions_server_Server)).disconnectClient(cl);
+			break;
+		case 1:
+			if(this.network_item == null) {
+				return;
+			}
+			this.stop();
+			break;
+		}
+	}
+	,triggerEvent: function(label,data) {
+		this._events_queue.dispatchEvent(label,data);
+	}
+	,trigger: function(verb,data) {
+		if(data == null) {
+			data = { };
+		}
+		this.send({ verb : verb, content : data});
+	}
+	,on: function(verb,callback) {
+		this.addEventListener("NETWORK_EVENT_MESSAGE_RECEIVED",function(event) {
+			if(event.get_verb() == verb) {
+				callback(event.get_data().content,event);
+			}
+		});
+	}
+	,get_clients: function() {
+		if(this.network_item == null || this.mode != networking_utils_NetworkMode.SERVER) {
+			return [];
+		}
+		return this.network_item.clients;
+	}
+	,get_uuid: function() {
+		if(this.network_item == null || this.mode == null) {
+			return null;
+		}
+		return this.network_item.info.uuid;
+	}
+	,addCoreEventListeners: function() {
+		openfl_Lib.get_current().stage.addEventListener("enterFrame",$bind(this,this.handleCoreQueuedEvents));
+		this.addEventListener("NETWORK_EVENT_CONNECTED",$bind(this,this.debugEvent));
+		this.addEventListener("NETWORK_EVENT_DISCONNECTED",$bind(this,this.debugEvent));
+		this.addEventListener("NETWORK_EVENT_INIT_FAILURE",$bind(this,this.debugEvent));
+		this.addEventListener("NETWORK_EVENT_INIT_SUCCESS",$bind(this,this.debugEvent));
+		this.addEventListener("NETWORK_EVENT_CLOSED",$bind(this,this.debugEvent));
+		this.addEventListener("NETWORK_EVENT_MESSAGE_RECEIVED",$bind(this,this.debugEvent));
+		this.addEventListener("NETWORK_EVENT_MESSAGE_SENT",$bind(this,this.debugEvent));
+		this.addEventListener("NETWORK_EVENT_MESSAGE_SENT_FAILED",$bind(this,this.debugEvent));
+		this.addEventListener("NETWORK_EVENT_SV_MESSAGE_BROADCAST",$bind(this,this.debugEvent));
+		this.addEventListener("NETWORK_EVENT_SV_MESSAGE_BROADCAST_FAILED",$bind(this,this.debugEvent));
+		this.addEventListener("NETWORK_EVENT_SERVER_FULL",$bind(this,this.debugEvent));
+		this.addEventListener("NETWORK_EVENT_SECURITY_ERROR",$bind(this,this.debugEvent));
+		this.addEventListener("NETWORK_EVENT_MESSAGE_RECEIVED",$bind(this,this.handleCoreReceivedMessage));
+	}
+	,debugEvent: function(e) {
+		var level = "EVENT";
+	}
+	,handleCoreQueuedEvents: function(e) {
+		this._events_queue.handleQueuedEvents();
+	}
+	,handleCoreReceivedMessage: function(event) {
+		try {
+			var client = event.get_client();
+			switch(event.get_verb()) {
+			case "_core.errors.server_full":
+				this.eventMatched(event);
+				event.session.triggerEvent("NETWORK_EVENT_SERVER_FULL",event.netData);
+				event.session.stop();
+				break;
+			case "_core.sync.update_client_data":
+				this.eventMatched(event);
+				event.get_client().update(event.get_data().uuid);
+				break;
+			default:
+			}
+		} catch( _g ) {
+			var e = haxe_Exception.caught(_g).unwrap();
+			var msg = e;
+			var level = "ERROR";
+		}
+	}
+	,eventMatched: function(event) {
+		event.stopImmediatePropagation();
+	}
+	,__class__: networking_sessions_Session
+	,__properties__: {get_uuid:"get_uuid",get_clients:"get_clients"}
+});
+var networking_sessions_client_Client = function(session,uuid,ip,port,flash_policy_file_url) {
+	if(port == null) {
+		port = 9696;
+	}
+	if(ip == null) {
+		ip = "127.0.0.1";
+	}
+	this._session = session;
+	this.ip = ip;
+	this.port = port;
+	this.flash_policy_file_url = flash_policy_file_url;
+	this._uuid = uuid;
+	this._mutex = new networking_wrappers_MutexWrapper();
+	this._thread = new networking_wrappers_ThreadWrapper($bind(this,this.threadCreate),$bind(this,this.threadListen),$bind(this,this.threadClose));
+};
+$hxClasses["networking.sessions.client.Client"] = networking_sessions_client_Client;
+networking_sessions_client_Client.__name__ = "networking.sessions.client.Client";
+networking_sessions_client_Client.prototype = {
+	info: null
+	,ip: null
+	,port: null
+	,flash_policy_file_url: null
+	,_session: null
+	,_mutex: null
+	,_uuid: null
+	,_thread: null
+	,_disconnected_message: null
+	,send: function(obj) {
+		try {
+			if(!this.info.send(obj)) {
+				throw haxe_Exception.thrown("Could not send message to server.");
+			}
+		} catch( _g ) {
+			var server = this.info != null ? this.info.server : null;
+			this._session.triggerEvent("NETWORK_EVENT_MESSAGE_SENT_FAILED",{ server : server, client : this.info, message : obj});
+		}
+	}
+	,stop: function() {
+		if(this.info.socket != null && this.info.socket.connected) {
+			this._session.triggerEvent("NETWORK_EVENT_CLOSED",{ client : this, message : "Session closed."});
+		}
+		this.disconnect();
+	}
+	,threadCreate: function() {
+		var _gthis = this;
+		this._session.triggerEvent("NETWORK_EVENT_INIT_FAILURE",{ message : "HTML5 is not a supported target."});
+		return false;
+	}
+	,threadListen: function() {
+		try {
+			this.info.read();
+		} catch( _g ) {
+			var e = haxe_Exception.caught(_g).unwrap();
+			var msg = e;
+			var level = "ERROR";
+			this._disconnected_message = "Connection lost: " + Std.string(e);
+			return false;
+		}
+		return true;
+	}
+	,threadClose: function() {
+		if(this.info.socket != null && this.info.socket.connected) {
+			this._session.triggerEvent("NETWORK_EVENT_DISCONNECTED",{ message : this._disconnected_message});
+		}
+		this.disconnect();
+	}
+	,disconnect: function() {
+		this._mutex.acquire();
+		this.info.destroySocket();
+		if(this._thread != null) {
+			this._thread.stop();
+		}
+		this._mutex.release();
+	}
+	,__class__: networking_sessions_client_Client
+};
+var networking_sessions_items_ClientObject = function(session,uuid,sv,skt) {
+	this.server = sv;
+	this.socket = skt;
+	this.uuid = uuid;
+	this._peer_str = "?:?";
+	this._session = session;
+};
+$hxClasses["networking.sessions.items.ClientObject"] = networking_sessions_items_ClientObject;
+networking_sessions_items_ClientObject.__name__ = "networking.sessions.items.ClientObject";
+networking_sessions_items_ClientObject.prototype = {
+	socket: null
+	,server: null
+	,active: null
+	,uuid: null
+	,object: null
+	,_peer_str: null
+	,_session: null
+	,toString: function() {
+		try {
+			return "" + this.uuid + " (" + this._peer_str + ")";
+		} catch( _g ) {
+			return "" + this.uuid + " (?:?)";
+		}
+	}
+	,update: function(uuid) {
+		if(uuid != null) {
+			this.uuid = uuid;
+		}
+	}
+	,initializeSocket: function(ip,port,on_connect,on_failure) {
+		if(this.socket != null) {
+			return false;
+		}
+		this.socket = new networking_wrappers_SocketWrapper();
+		this.socket.onConnect = on_connect;
+		this.socket.onFailure = on_failure;
+		this.socket.connect(ip,port);
+		return true;
+	}
+	,destroySocket: function() {
+		if(this.socket == null) {
+			return false;
+		}
+		this.socket.close();
+		this.socket = null;
+		return true;
+	}
+	,load: function() {
+		try {
+			this._peer_str = this.socket.toString();
+		} catch( _g ) {
+			this._peer_str = "?:?";
+		}
+		this.generateUuid();
+	}
+	,send: function(msg) {
+		try {
+			if(this.socket == null) {
+				throw haxe_Exception.thrown("Socket is not initialized.");
+			}
+			var server_info = this.server != null ? this.server.info : null;
+			var raw_message = networking_utils_NetworkMessage.createRaw(server_info,this,msg);
+			var tmp = this.socket;
+			var handler = new haxe_Serializer();
+			handler.serialize(raw_message);
+			tmp.write(handler.toString() + "\n");
+			this._session.triggerEvent("NETWORK_EVENT_MESSAGE_SENT",{ obj : this, message : raw_message});
+		} catch( _g ) {
+			var e = haxe_Exception.caught(_g).unwrap();
+			var msg = e;
+			var level = "ERROR";
+			this.active = false;
+			return false;
+		}
+		return true;
+	}
+	,read: function() {
+		var data = this.socket.read();
+		if(this.get_active() && data != null) {
+			this._session.triggerEvent("NETWORK_EVENT_MESSAGE_RECEIVED",{ obj : this, message : networking_utils_NetworkMessage.parse(data)});
+		}
+	}
+	,trigger: function(verb,data) {
+		if(data == null) {
+			data = { };
+		}
+		this.send({ verb : verb, content : data});
+	}
+	,generateUuid: function() {
+		if(this.uuid != null && this.uuid != "") {
+			return;
+		}
+		this.uuid = networking_utils_Utils.guid();
+	}
+	,get_object: function() {
+		return { active : this.get_active(), uuid : this.uuid};
+	}
+	,get_active: function() {
+		return this.socket != null;
+	}
+	,__class__: networking_sessions_items_ClientObject
+	,__properties__: {get_object:"get_object",get_active:"get_active"}
+};
+var networking_sessions_items_ServerObject = function(session,uuid,sv) {
+	networking_sessions_items_ClientObject.call(this,session,uuid,sv,null);
+	this.generateUuid();
+};
+$hxClasses["networking.sessions.items.ServerObject"] = networking_sessions_items_ServerObject;
+networking_sessions_items_ServerObject.__name__ = "networking.sessions.items.ServerObject";
+networking_sessions_items_ServerObject.__super__ = networking_sessions_items_ClientObject;
+networking_sessions_items_ServerObject.prototype = $extend(networking_sessions_items_ClientObject.prototype,{
+	toString: function() {
+		return "" + this.uuid + " (local)";
+	}
+	,send: function(msg) {
+		throw haxe_Exception.thrown("Method not implemented");
+	}
+	,initializeSocket: function(ip,port,on_connect,on_failure) {
+		if(this.socket != null) {
+			return false;
+		}
+		this.socket = new networking_wrappers_SocketWrapper();
+		this.socket.bind(ip,port);
+		this.socket.listen(200);
+		return true;
+	}
+	,__class__: networking_sessions_items_ServerObject
+});
+var networking_sessions_server_FlashPolicyServer = function(server,port) {
+	if(port == null) {
+		port = networking_sessions_server_FlashPolicyServer.PORT;
+	}
+	this._port = port;
+	this._server = server;
+	this._socket = new networking_wrappers_SocketWrapper();
+};
+$hxClasses["networking.sessions.server.FlashPolicyServer"] = networking_sessions_server_FlashPolicyServer;
+networking_sessions_server_FlashPolicyServer.__name__ = "networking.sessions.server.FlashPolicyServer";
+networking_sessions_server_FlashPolicyServer.prototype = {
+	_port: null
+	,_socket: null
+	,_server: null
+	,_thread: null
+	,run: function() {
+		throw haxe_Exception.thrown("FlashPolicy Server is not available in non-native targets.");
+	}
+	,stop: function() {
+		this._socket.close();
+		this._thread.stop();
+	}
+	,startServer: function() {
+		try {
+			this._socket.bind(this._server.ip,this._port);
+			this._socket.listen(200);
+		} catch( _g ) {
+			this._server._session.triggerEvent("NETWORK_EVENT_SECURITY_ERROR","Could not start policy server.");
+			return false;
+		}
+		return true;
+	}
+	,loopServer: function() {
+		var client;
+		try {
+			client = this._socket.accept();
+			if(client == null) {
+				return true;
+			}
+		} catch( _g ) {
+			return true;
+		}
+		var bytes = haxe_io_Bytes.ofString("HTTP/1.1 200 OK\n\r" + "Content-Type: text/xml\n\r\n\r" + "<cross-domain-policy><site-control permitted-cross-domain-policies=\"master-only\"/><allow-access-from domain=\"*\" to-ports=\"*\" /></cross-domain-policy>\x00");
+		try {
+			client.writeBytes(bytes,bytes.length);
+			client.close();
+		} catch( _g ) {
+			var e = haxe_Exception.caught(_g).unwrap();
+			var msg = e;
+			var level = "ERROR";
+		}
+		return true;
+	}
+	,__class__: networking_sessions_server_FlashPolicyServer
+};
+var networking_sessions_server_Server = function(session,uuid,ip,port,max_connections,flash_policy_file_port) {
+	if(max_connections == null) {
+		max_connections = 24;
+	}
+	if(port == null) {
+		port = 9696;
+	}
+	if(ip == null) {
+		ip = "127.0.0.1";
+	}
+	this._session = session;
+	this._mutex = new networking_wrappers_MutexWrapper();
+	this._uuid = uuid;
+	try {
+		throw haxe_Exception.thrown("Server mode is not available in non-native targets.");
+	} catch( _g ) {
+		var e = haxe_Exception.caught(_g).unwrap();
+		this._session.triggerEvent("NETWORK_EVENT_INIT_FAILURE",{ server : this, message : "Could not bind to " + ip + ":" + port + ". Ensure that no server is running on that port. Reason: " + Std.string(e)});
+		this.info = null;
+		return;
+	}
+};
+$hxClasses["networking.sessions.server.Server"] = networking_sessions_server_Server;
+networking_sessions_server_Server.__name__ = "networking.sessions.server.Server";
+networking_sessions_server_Server.prototype = {
+	clients: null
+	,info: null
+	,ip: null
+	,port: null
+	,max_connections: null
+	,flash_policy_file_port: null
+	,_session: null
+	,_mutex: null
+	,_uuid: null
+	,_thread: null
+	,_policy_server: null
+	,broadcast: function(obj) {
+		try {
+			var _g = 0;
+			var _g1 = this.clients;
+			while(_g < _g1.length) {
+				var cl = _g1[_g];
+				++_g;
+				if(!cl.send(obj)) {
+					this.disconnectClient(cl,false);
+				}
+			}
+			this._session.triggerEvent("NETWORK_EVENT_SV_MESSAGE_BROADCAST",{ server : this, message : obj});
+		} catch( _g ) {
+			this._session.triggerEvent("NETWORK_EVENT_SV_MESSAGE_BROADCAST_FAILED",{ server : this, message : obj});
+		}
+	}
+	,disconnectClient: function(cl,dispatch) {
+		if(dispatch == null) {
+			dispatch = true;
+		}
+		try {
+			if(!cl.get_active()) {
+				return false;
+			}
+			if(dispatch) {
+				this._session.triggerEvent("NETWORK_EVENT_DISCONNECTED",{ server : this, client : cl});
+			}
+			cl.destroySocket();
+			HxOverrides.remove(this.clients,cl);
+		} catch( _g ) {
+		}
+		return true;
+	}
+	,stop: function() {
+		if(this._thread != null) {
+			this._thread.stop();
+		}
+		if(this._policy_server != null) {
+			this._policy_server.stop();
+		}
+		this._mutex.acquire();
+		this.cleanup();
+		this._mutex.release();
+		if(this.info != null) {
+			this._session.triggerEvent("NETWORK_EVENT_CLOSED",{ server : this, message : "Session closed."});
+		}
+		this._thread = null;
+		this._mutex = null;
+		this._policy_server = null;
+	}
+	,send: function(obj) {
+		this.broadcast(obj);
+	}
+	,session: function() {
+		return this._session;
+	}
+	,threadLoop: function() {
+		var sk = null;
+		try {
+			sk = this.info.socket.accept();
+		} catch( _g ) {
+			var e = haxe_Exception.caught(_g).unwrap();
+			var msg = e;
+			var level = "ERROR";
+		}
+		if(sk != null) {
+			var cl = new networking_sessions_items_ClientObject(this._session,null,this,sk);
+			if(!this.maxClientsReached()) {
+				new networking_wrappers_ThreadWrapper(this.getThreadCreate(cl),this.getThreadListen(cl),this.getThreadDisconnect(cl));
+			} else {
+				var message = { verb : "_core.errors.server_full", message : "Server is full."};
+				cl.send(message);
+				this._session.triggerEvent("NETWORK_EVENT_SERVER_FULL",{ client : cl, message : message});
+			}
+		}
+		return true;
+	}
+	,cleanup: function() {
+		if(this.clients == null) {
+			return;
+		}
+		var _g = 0;
+		var _g1 = this.clients;
+		while(_g < _g1.length) {
+			var cl = _g1[_g];
+			++_g;
+			this.disconnectClient(cl,false);
+		}
+		this.info.destroySocket();
+		this.clients = [];
+	}
+	,maxClientsReached: function() {
+		return this.clients.length >= this.max_connections;
+	}
+	,getThreadCreate: function(cl) {
+		var _gthis = this;
+		return function() {
+			_gthis.clients.push(cl);
+			cl.load();
+			_gthis._session.triggerEvent("NETWORK_EVENT_CONNECTED",{ server : _gthis, client : cl});
+			return true;
+		};
+	}
+	,getThreadListen: function(cl) {
+		return function() {
+			if(!cl.get_active()) {
+				return false;
+			}
+			try {
+				cl.read();
+			} catch( _g ) {
+				return false;
+			}
+			return true;
+		};
+	}
+	,getThreadDisconnect: function(cl) {
+		var _gthis = this;
+		return function() {
+			_gthis.disconnectClient(cl);
+		};
+	}
+	,__class__: networking_sessions_server_Server
+};
+var openfl_events_Event = function(type,bubbles,cancelable) {
+	if(cancelable == null) {
+		cancelable = false;
+	}
+	if(bubbles == null) {
+		bubbles = false;
+	}
+	this.type = type;
+	this.bubbles = bubbles;
+	this.cancelable = cancelable;
+	this.eventPhase = 2;
+};
+$hxClasses["openfl.events.Event"] = openfl_events_Event;
+openfl_events_Event.__name__ = "openfl.events.Event";
+openfl_events_Event.prototype = {
+	bubbles: null
+	,cancelable: null
+	,currentTarget: null
+	,eventPhase: null
+	,target: null
+	,type: null
+	,__isCanceled: null
+	,__isCanceledNow: null
+	,__preventDefault: null
+	,clone: function() {
+		var event = new openfl_events_Event(this.type,this.bubbles,this.cancelable);
+		event.eventPhase = this.eventPhase;
+		event.target = this.target;
+		event.currentTarget = this.currentTarget;
+		return event;
+	}
+	,formatToString: function(className,p1,p2,p3,p4,p5) {
+		var parameters = [];
+		if(p1 != null) {
+			parameters.push(p1);
+		}
+		if(p2 != null) {
+			parameters.push(p2);
+		}
+		if(p3 != null) {
+			parameters.push(p3);
+		}
+		if(p4 != null) {
+			parameters.push(p4);
+		}
+		if(p5 != null) {
+			parameters.push(p5);
+		}
+		return $bind(this,this.__formatToString).apply(this,[className,parameters]);
+	}
+	,isDefaultPrevented: function() {
+		return this.__preventDefault;
+	}
+	,preventDefault: function() {
+		if(this.cancelable) {
+			this.__preventDefault = true;
+		}
+	}
+	,stopImmediatePropagation: function() {
+		this.__isCanceled = true;
+		this.__isCanceledNow = true;
+	}
+	,stopPropagation: function() {
+		this.__isCanceled = true;
+	}
+	,toString: function() {
+		return this.__formatToString("Event",["type","bubbles","cancelable"]);
+	}
+	,__formatToString: function(className,parameters) {
+		var output = "[" + className;
+		var arg = null;
+		var _g = 0;
+		while(_g < parameters.length) {
+			var param = parameters[_g];
+			++_g;
+			arg = Reflect.field(this,param);
+			if(typeof(arg) == "string") {
+				output += " " + param + "=\"" + Std.string(arg) + "\"";
+			} else {
+				output += " " + param + "=" + Std.string(arg);
+			}
+		}
+		output += "]";
+		return output;
+	}
+	,__init: function() {
+		this.target = null;
+		this.currentTarget = null;
+		this.bubbles = false;
+		this.cancelable = false;
+		this.eventPhase = 2;
+		this.__isCanceled = false;
+		this.__isCanceledNow = false;
+		this.__preventDefault = false;
+	}
+	,__class__: openfl_events_Event
+};
+var networking_utils_NetworkEvent = function(label,session,netData,bubbles,cancelable) {
+	if(cancelable == null) {
+		cancelable = false;
+	}
+	if(bubbles == null) {
+		bubbles = false;
+	}
+	openfl_events_Event.call(this,label,bubbles,cancelable);
+	this.netData = netData;
+	this.session = session;
+};
+$hxClasses["networking.utils.NetworkEvent"] = networking_utils_NetworkEvent;
+networking_utils_NetworkEvent.__name__ = "networking.utils.NetworkEvent";
+networking_utils_NetworkEvent.__super__ = openfl_events_Event;
+networking_utils_NetworkEvent.prototype = $extend(openfl_events_Event.prototype,{
+	netData: null
+	,session: null
+	,data: null
+	,metadata: null
+	,client: null
+	,verb: null
+	,sender: null
+	,get_data: function() {
+		return this.netData.message.data;
+	}
+	,get_metadata: function() {
+		return this.netData.message.metadata;
+	}
+	,get_client: function() {
+		var cl = this.netData.client != null ? this.netData.client : this.netData.obj;
+		return cl;
+	}
+	,get_verb: function() {
+		return this.get_data().verb;
+	}
+	,get_sender: function() {
+		try {
+			switch(this.session.mode._hx_index) {
+			case 0:
+				return this.get_metadata().client;
+			case 1:
+				return this.get_metadata().server;
+			}
+		} catch( _g ) {
+			var e = haxe_Exception.caught(_g).unwrap();
+			var msg = e;
+			var level = "ERROR";
+			return null;
+		}
+	}
+	,__class__: networking_utils_NetworkEvent
+	,__properties__: {get_sender:"get_sender",get_verb:"get_verb",get_client:"get_client",get_metadata:"get_metadata",get_data:"get_data"}
+});
+var networking_utils_NetworkEventsQueue = function(session) {
+	this._session = session;
+	this._queue = new networking_wrappers_DequeWrapper_$networking_$utils_$NetworkEvent();
+	this._mutex = new networking_wrappers_MutexWrapper();
+	this._queue_size = 0;
+};
+$hxClasses["networking.utils.NetworkEventsQueue"] = networking_utils_NetworkEventsQueue;
+networking_utils_NetworkEventsQueue.__name__ = "networking.utils.NetworkEventsQueue";
+networking_utils_NetworkEventsQueue.prototype = {
+	_queue: null
+	,_mutex: null
+	,_queue_size: null
+	,_session: null
+	,dispatchEvent: function(label,data) {
+		this.addEvent(new networking_utils_NetworkEvent(label,this._session,data));
+	}
+	,handleQueuedEvents: function() {
+		var event;
+		while(true) {
+			var event1 = this._queue.pop();
+			if(event1 != null) {
+				this.incrementCounterBy(-1);
+			}
+			event = event1;
+			if(!(event != null)) {
+				break;
+			}
+			this._session.dispatchEvent(event);
+		}
+	}
+	,length: function() {
+		this._mutex.acquire();
+		var value = this._queue_size;
+		this._mutex.release();
+		return value;
+	}
+	,popEvent: function() {
+		var event = this._queue.pop();
+		if(event != null) {
+			this.incrementCounterBy(-1);
+		}
+		return event;
+	}
+	,addEvent: function(event) {
+		this.incrementCounterBy(1);
+		this._queue.add(event);
+	}
+	,incrementCounterBy: function(value) {
+		this._mutex.acquire();
+		this._queue_size += value;
+		this._mutex.release();
+	}
+	,__class__: networking_utils_NetworkEventsQueue
+};
+var networking_utils_NetworkLogger = function() {
+};
+$hxClasses["networking.utils.NetworkLogger"] = networking_utils_NetworkLogger;
+networking_utils_NetworkLogger.__name__ = "networking.utils.NetworkLogger";
+networking_utils_NetworkLogger.error = function(exception) {
+	var msg = exception;
+	var level = "ERROR";
+};
+networking_utils_NetworkLogger.event = function(event) {
+	var level = "EVENT";
+};
+networking_utils_NetworkLogger.log = function(msg,level) {
+	if(level == null) {
+		level = "INFO";
+	}
+};
+networking_utils_NetworkLogger.prototype = {
+	__class__: networking_utils_NetworkLogger
+};
+var networking_utils_NetworkMessage = function(server_info,client_info,data) {
+	this.server = server_info;
+	this.client = client_info;
+	this.data = data != null ? data : { };
+};
+$hxClasses["networking.utils.NetworkMessage"] = networking_utils_NetworkMessage;
+networking_utils_NetworkMessage.__name__ = "networking.utils.NetworkMessage";
+networking_utils_NetworkMessage.createRaw = function(server,client,data) {
+	return new networking_utils_NetworkMessage(server,client,data).toMessage();
+};
+networking_utils_NetworkMessage.create = function(server,client,data) {
+	var obj = networking_utils_NetworkMessage.createRaw(server,client,data);
+	var handler = new haxe_Serializer();
+	handler.serialize(obj);
+	return handler.toString();
+};
+networking_utils_NetworkMessage.serialize = function(obj) {
+	var handler = new haxe_Serializer();
+	handler.serialize(obj);
+	return handler.toString();
+};
+networking_utils_NetworkMessage.parse = function(obj) {
+	var handler = new haxe_Unserializer(obj);
+	return handler.unserialize();
+};
+networking_utils_NetworkMessage.prototype = {
+	server: null
+	,client: null
+	,data: null
+	,toMessage: function() {
+		return { metadata : { client : this.client != null ? this.client.get_object() : null, server : this.server != null ? this.server.get_object() : null}, data : this.data};
+	}
+	,__class__: networking_utils_NetworkMessage
+};
+var networking_utils_NetworkMode = $hxEnums["networking.utils.NetworkMode"] = { __ename__ : "networking.utils.NetworkMode", __constructs__ : ["SERVER","CLIENT"]
+	,SERVER: {_hx_index:0,__enum__:"networking.utils.NetworkMode",toString:$estr}
+	,CLIENT: {_hx_index:1,__enum__:"networking.utils.NetworkMode",toString:$estr}
+};
+var networking_utils_NetworkSerializer = function() {
+};
+$hxClasses["networking.utils.NetworkSerializer"] = networking_utils_NetworkSerializer;
+networking_utils_NetworkSerializer.__name__ = "networking.utils.NetworkSerializer";
+networking_utils_NetworkSerializer.serialize = function(obj) {
+	var handler = new haxe_Serializer();
+	handler.serialize(obj);
+	return handler.toString();
+};
+networking_utils_NetworkSerializer.unserialize = function(obj) {
+	var handler = new haxe_Unserializer(obj);
+	return handler.unserialize();
+};
+networking_utils_NetworkSerializer.prototype = {
+	__class__: networking_utils_NetworkSerializer
+};
+var networking_utils_Utils = function() {
+};
+$hxClasses["networking.utils.Utils"] = networking_utils_Utils;
+networking_utils_Utils.__name__ = "networking.utils.Utils";
+networking_utils_Utils.guid = function() {
+	return networking_utils_Utils.s4() + networking_utils_Utils.s4() + "-" + networking_utils_Utils.s4() + "-" + networking_utils_Utils.s4() + "-" + networking_utils_Utils.s4() + "-" + networking_utils_Utils.s4() + networking_utils_Utils.s4() + networking_utils_Utils.s4();
+};
+networking_utils_Utils.s4 = function() {
+	return HxOverrides.substr(StringTools.hex(Math.floor((1 + Math.random()) * 65536)),1,null);
+};
+networking_utils_Utils.prototype = {
+	__class__: networking_utils_Utils
+};
+var networking_wrappers_DequeWrapper = function() {
+	this._mutex = new networking_wrappers_MutexWrapper();
+	this._array = [];
+};
+$hxClasses["networking.wrappers.DequeWrapper"] = networking_wrappers_DequeWrapper;
+networking_wrappers_DequeWrapper.__name__ = "networking.wrappers.DequeWrapper";
+networking_wrappers_DequeWrapper.prototype = {
+	_array: null
+	,_mutex: null
+	,add: function(x) {
+		this._mutex.acquire();
+		this._array.unshift(x);
+		this._mutex.release();
+	}
+	,pop: function() {
+		this._mutex.acquire();
+		var output = this._array.pop();
+		this._mutex.release();
+		return output;
+	}
+	,__class__: networking_wrappers_DequeWrapper
+};
+var networking_wrappers_DequeWrapper_$networking_$utils_$NetworkEvent = function() {
+	this._mutex = new networking_wrappers_MutexWrapper();
+	this._array = [];
+};
+$hxClasses["networking.wrappers.DequeWrapper_networking_utils_NetworkEvent"] = networking_wrappers_DequeWrapper_$networking_$utils_$NetworkEvent;
+networking_wrappers_DequeWrapper_$networking_$utils_$NetworkEvent.__name__ = "networking.wrappers.DequeWrapper_networking_utils_NetworkEvent";
+networking_wrappers_DequeWrapper_$networking_$utils_$NetworkEvent.prototype = {
+	_array: null
+	,_mutex: null
+	,add: function(x) {
+		this._mutex.acquire();
+		this._array.unshift(x);
+		this._mutex.release();
+	}
+	,pop: function() {
+		this._mutex.acquire();
+		var output = this._array.pop();
+		this._mutex.release();
+		return output;
+	}
+	,__class__: networking_wrappers_DequeWrapper_$networking_$utils_$NetworkEvent
+};
+var networking_wrappers_MutexWrapper = function() {
+	this._active = false;
+};
+$hxClasses["networking.wrappers.MutexWrapper"] = networking_wrappers_MutexWrapper;
+networking_wrappers_MutexWrapper.__name__ = "networking.wrappers.MutexWrapper";
+networking_wrappers_MutexWrapper.prototype = {
+	_active: null
+	,acquire: function() {
+		while(this.testAndSet()) {
+		}
+	}
+	,release: function() {
+		this._active = false;
+	}
+	,testAndSet: function() {
+		var initial = this._active;
+		this._active = true;
+		return initial;
+	}
+	,__class__: networking_wrappers_MutexWrapper
+};
+var networking_wrappers_SocketWrapper = function(data) {
+	this.MAX_DATA_SIZE = 65535;
+	if(data != null) {
+		this._socket = data;
+	} else {
+		this._socket = new openfl_net_Socket();
+	}
+	this.connected = false;
+	this._is_server = false;
+};
+$hxClasses["networking.wrappers.SocketWrapper"] = networking_wrappers_SocketWrapper;
+networking_wrappers_SocketWrapper.__name__ = "networking.wrappers.SocketWrapper";
+networking_wrappers_SocketWrapper.prototype = {
+	MAX_DATA_SIZE: null
+	,onConnect: null
+	,onFailure: null
+	,connected: null
+	,_socket: null
+	,_is_server: null
+	,connect: function(host,port) {
+		var _gthis = this;
+		var on_connect_handler = function(e) {
+			try {
+				_gthis.connected = true;
+				_gthis.onConnect(e);
+			} catch( _g ) {
+				var e = haxe_Exception.caught(_g).unwrap();
+				_gthis.onFailure(e);
+			}
+		};
+		var on_failure_handler = function(e) {
+			var msg = e;
+			var level = "ERROR";
+			if(!_gthis.connected) {
+				_gthis.onFailure(e);
+				_gthis.connected = false;
+			}
+		};
+		this._socket.addEventListener("connect",on_connect_handler);
+		this._socket.addEventListener("ioError",on_failure_handler);
+		this._socket.addEventListener("securityError",on_failure_handler);
+		this._socket.connect(host,port);
+		this._is_server = false;
+	}
+	,close: function() {
+		if(!this._socket.get_connected()) {
+			return;
+		}
+		this._socket.close();
+	}
+	,accept: function() {
+		throw haxe_Exception.thrown("Method not available in non-native targets.");
+	}
+	,listen: function(connections) {
+		throw haxe_Exception.thrown("Method not available in non-native targets.");
+	}
+	,bind: function(host,port) {
+		throw haxe_Exception.thrown("Method not available in non-native targets.");
+	}
+	,read: function() {
+		if(!this.connected || this._socket.get_connected() && this._socket.get_bytesAvailable() == 0) {
+			return null;
+		}
+		if(!this._socket.get_connected()) {
+			throw haxe_Exception.thrown("Disconnected from server");
+		}
+		return this.readString();
+	}
+	,write: function(data) {
+		if(this._socket == null) {
+			return;
+		}
+		if(!this.connected || !this._socket.get_connected()) {
+			throw haxe_Exception.thrown("Connection not established.");
+		}
+		this.writeString(data);
+		this.flush();
+	}
+	,writeBytes: function(buffer,length,offset) {
+		if(offset == null) {
+			offset = 0;
+		}
+		throw haxe_Exception.thrown("Method not available in non-native targets.");
+	}
+	,toString: function() {
+		try {
+			return this._socket.toString();
+		} catch( _g ) {
+			var e = haxe_Exception.caught(_g).unwrap();
+			var msg = e;
+			var level = "ERROR";
+			return "?:?";
+		}
+	}
+	,flush: function() {
+		this._socket.flush();
+	}
+	,writeUnsignedInt16: function(x) {
+		this._socket.writeByte(x >>> 8 & 255);
+		this._socket.writeByte(x & 255);
+	}
+	,writeString: function(s) {
+		if(s.length > this.MAX_DATA_SIZE) {
+			throw haxe_Exception.thrown("String data is too big - " + s.length + " bytes (" + this.MAX_DATA_SIZE + " bytes max)");
+		}
+		this.writeUnsignedInt16(s.length);
+		this._socket.writeUTFBytes(s);
+	}
+	,readUnsignedInt16: function() {
+		var byte1 = this._socket.readByte() & 255;
+		var byte2 = this._socket.readByte() & 255;
+		return byte1 << 8 | byte2;
+	}
+	,readString: function() {
+		var len = this.readUnsignedInt16();
+		return this._socket.readUTFBytes(len);
+	}
+	,__class__: networking_wrappers_SocketWrapper
+};
+var networking_wrappers_ThreadWrapper = function(on_start,on_loop,on_stop) {
+	this._on_start = on_start;
+	this._on_loop = on_loop;
+	this._on_stop = on_stop;
+	this._active = true;
+	this._mutex = new networking_wrappers_MutexWrapper();
+	var thread_pool = new lime_system_ThreadPool();
+	thread_pool.doWork.add($bind(this,this.handler));
+	thread_pool.queue();
+};
+$hxClasses["networking.wrappers.ThreadWrapper"] = networking_wrappers_ThreadWrapper;
+networking_wrappers_ThreadWrapper.__name__ = "networking.wrappers.ThreadWrapper";
+networking_wrappers_ThreadWrapper.prototype = {
+	_active: null
+	,_mutex: null
+	,_on_start: null
+	,_on_loop: null
+	,_on_stop: null
+	,stop: function() {
+		this._mutex.acquire();
+		this._active = false;
+		this._mutex.release();
+	}
+	,handler: function(test) {
+		this.handlerLogic();
+	}
+	,handlerLogic: function() {
+		var success = true;
+		if(this._on_start != null) {
+			success = this._on_start();
+		}
+		if(!success) {
+			return;
+		}
+		while(true) {
+			this._mutex.acquire();
+			if(!this._active) {
+				this._mutex.release();
+				break;
+			}
+			this._mutex.release();
+			if(!this._on_loop()) {
+				break;
+			}
+		}
+		if(this._on_stop != null) {
+			this._on_stop();
+		}
+	}
+	,__class__: networking_wrappers_ThreadWrapper
 };
 var openfl_Lib = function() { };
 $hxClasses["openfl.Lib"] = openfl_Lib;
@@ -107863,6 +108978,19 @@ openfl_errors_RangeError.__super__ = openfl_errors_Error;
 openfl_errors_RangeError.prototype = $extend(openfl_errors_Error.prototype,{
 	__class__: openfl_errors_RangeError
 });
+var openfl_errors_SecurityError = function(message) {
+	if(message == null) {
+		message = "";
+	}
+	openfl_errors_Error.call(this,message,0);
+	this.name = "SecurityError";
+};
+$hxClasses["openfl.errors.SecurityError"] = openfl_errors_SecurityError;
+openfl_errors_SecurityError.__name__ = "openfl.errors.SecurityError";
+openfl_errors_SecurityError.__super__ = openfl_errors_Error;
+openfl_errors_SecurityError.prototype = $extend(openfl_errors_Error.prototype,{
+	__class__: openfl_errors_SecurityError
+});
 var openfl_errors_TypeError = function(message) {
 	if(message == null) {
 		message = "";
@@ -107876,103 +109004,6 @@ openfl_errors_TypeError.__super__ = openfl_errors_Error;
 openfl_errors_TypeError.prototype = $extend(openfl_errors_Error.prototype,{
 	__class__: openfl_errors_TypeError
 });
-var openfl_events_Event = function(type,bubbles,cancelable) {
-	if(cancelable == null) {
-		cancelable = false;
-	}
-	if(bubbles == null) {
-		bubbles = false;
-	}
-	this.type = type;
-	this.bubbles = bubbles;
-	this.cancelable = cancelable;
-	this.eventPhase = 2;
-};
-$hxClasses["openfl.events.Event"] = openfl_events_Event;
-openfl_events_Event.__name__ = "openfl.events.Event";
-openfl_events_Event.prototype = {
-	bubbles: null
-	,cancelable: null
-	,currentTarget: null
-	,eventPhase: null
-	,target: null
-	,type: null
-	,__isCanceled: null
-	,__isCanceledNow: null
-	,__preventDefault: null
-	,clone: function() {
-		var event = new openfl_events_Event(this.type,this.bubbles,this.cancelable);
-		event.eventPhase = this.eventPhase;
-		event.target = this.target;
-		event.currentTarget = this.currentTarget;
-		return event;
-	}
-	,formatToString: function(className,p1,p2,p3,p4,p5) {
-		var parameters = [];
-		if(p1 != null) {
-			parameters.push(p1);
-		}
-		if(p2 != null) {
-			parameters.push(p2);
-		}
-		if(p3 != null) {
-			parameters.push(p3);
-		}
-		if(p4 != null) {
-			parameters.push(p4);
-		}
-		if(p5 != null) {
-			parameters.push(p5);
-		}
-		return $bind(this,this.__formatToString).apply(this,[className,parameters]);
-	}
-	,isDefaultPrevented: function() {
-		return this.__preventDefault;
-	}
-	,preventDefault: function() {
-		if(this.cancelable) {
-			this.__preventDefault = true;
-		}
-	}
-	,stopImmediatePropagation: function() {
-		this.__isCanceled = true;
-		this.__isCanceledNow = true;
-	}
-	,stopPropagation: function() {
-		this.__isCanceled = true;
-	}
-	,toString: function() {
-		return this.__formatToString("Event",["type","bubbles","cancelable"]);
-	}
-	,__formatToString: function(className,parameters) {
-		var output = "[" + className;
-		var arg = null;
-		var _g = 0;
-		while(_g < parameters.length) {
-			var param = parameters[_g];
-			++_g;
-			arg = Reflect.field(this,param);
-			if(typeof(arg) == "string") {
-				output += " " + param + "=\"" + Std.string(arg) + "\"";
-			} else {
-				output += " " + param + "=" + Std.string(arg);
-			}
-		}
-		output += "]";
-		return output;
-	}
-	,__init: function() {
-		this.target = null;
-		this.currentTarget = null;
-		this.bubbles = false;
-		this.cancelable = false;
-		this.eventPhase = 2;
-		this.__isCanceled = false;
-		this.__isCanceledNow = false;
-		this.__preventDefault = false;
-	}
-	,__class__: openfl_events_Event
-};
 var openfl_events_AccelerometerEvent = function(type,bubbles,cancelable,timestamp,accelerationX,accelerationY,accelerationZ) {
 	if(accelerationZ == null) {
 		accelerationZ = 0;
@@ -111013,6 +112044,354 @@ openfl_net_SharedObjectFlushStatus.toString = function(this1) {
 		return null;
 	}
 };
+var openfl_net_Socket = function(host,port) {
+	if(port == null) {
+		port = 0;
+	}
+	openfl_events_EventDispatcher.call(this);
+	this.set_endian(0);
+	this.timeout = 20000;
+	this.__buffer = new haxe_io_Bytes(new ArrayBuffer(4096));
+	if(port > 0 && port < 65535) {
+		this.connect(host,port);
+	}
+};
+$hxClasses["openfl.net.Socket"] = openfl_net_Socket;
+openfl_net_Socket.__name__ = "openfl.net.Socket";
+openfl_net_Socket.__interfaces__ = [openfl_utils_IDataOutput,openfl_utils_IDataInput];
+openfl_net_Socket.__super__ = openfl_events_EventDispatcher;
+openfl_net_Socket.prototype = $extend(openfl_events_EventDispatcher.prototype,{
+	objectEncoding: null
+	,secure: null
+	,timeout: null
+	,__buffer: null
+	,__connected: null
+	,__endian: null
+	,__host: null
+	,__input: null
+	,__output: null
+	,__port: null
+	,__socket: null
+	,__timestamp: null
+	,close: function() {
+		if(this.__socket != null) {
+			this.__cleanSocket();
+		} else {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+	}
+	,connect: function(host,port) {
+		if(port == null) {
+			port = 0;
+		}
+		if(this.__socket != null) {
+			this.close();
+		}
+		if(port < 0 || port > 65535) {
+			throw haxe_Exception.thrown(new openfl_errors_SecurityError("Invalid socket port number specified."));
+		}
+		this.__timestamp = new Date().getTime() / 1000;
+		this.__host = host;
+		this.__port = port;
+		var this1 = new openfl_utils_ByteArrayData(0);
+		this.__output = this1;
+		this.__output.__endian = this.__endian;
+		var this1 = new openfl_utils_ByteArrayData(0);
+		this.__input = this1;
+		this.__input.__endian = this.__endian;
+		if($global.location.protocol == "https:") {
+			this.secure = true;
+		}
+		var schema = this.secure ? "wss" : "ws";
+		var urlReg = new EReg("^(.*://)?([A-Za-z0-9\\-\\.]+)/?(.*)","g");
+		urlReg.match(host);
+		var __webHost = urlReg.matched(2);
+		var __webPath = urlReg.matched(3);
+		this.__socket = new WebSocket(schema + "://" + __webHost + ":" + port + "/" + __webPath);
+		this.__socket.binaryType = "arraybuffer";
+		this.__socket.onopen = $bind(this,this.socket_onOpen);
+		this.__socket.onmessage = $bind(this,this.socket_onMessage);
+		this.__socket.onclose = $bind(this,this.socket_onClose);
+		this.__socket.onerror = $bind(this,this.socket_onError);
+		openfl_utils__$internal_Lib.current.addEventListener("enterFrame",$bind(this,this.this_onEnterFrame));
+	}
+	,flush: function() {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		if(UInt.gt(openfl_utils_ByteArray.get_length(this.__output),0)) {
+			try {
+				var buffer = openfl_utils_ByteArray.toArrayBuffer(this.__output);
+				if(UInt.gt(buffer.byteLength,openfl_utils_ByteArray.get_length(this.__output))) {
+					buffer = buffer.slice(0,openfl_utils_ByteArray.get_length(this.__output));
+				}
+				this.__socket.send(buffer);
+				var this1 = new openfl_utils_ByteArrayData(0);
+				this.__output = this1;
+				this.__output.__endian = this.__endian;
+			} catch( _g ) {
+				throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+			}
+		}
+	}
+	,readBoolean: function() {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		return this.__input.readBoolean();
+	}
+	,readByte: function() {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		return this.__input.readByte();
+	}
+	,readBytes: function(bytes,offset,length) {
+		if(length == null) {
+			length = 0;
+		}
+		if(offset == null) {
+			offset = 0;
+		}
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		var offset1 = offset;
+		var length1 = length;
+		if(length1 == null) {
+			length1 = 0;
+		}
+		if(offset1 == null) {
+			offset1 = 0;
+		}
+		this.__input.readBytes(bytes,offset1,length1);
+	}
+	,readDouble: function() {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		return this.__input.readDouble();
+	}
+	,readFloat: function() {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		return this.__input.readFloat();
+	}
+	,readInt: function() {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		return this.__input.readInt();
+	}
+	,readMultiByte: function(length,charSet) {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		return this.__input.readMultiByte(length,charSet);
+	}
+	,readObject: function() {
+		if(this.objectEncoding == 10) {
+			return haxe_Unserializer.run(this.readUTF());
+		} else {
+			return null;
+		}
+	}
+	,readShort: function() {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		return this.__input.readShort();
+	}
+	,readUnsignedByte: function() {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		return this.__input.readUnsignedByte();
+	}
+	,readUnsignedInt: function() {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		return this.__input.readUnsignedInt();
+	}
+	,readUnsignedShort: function() {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		return this.__input.readUnsignedShort();
+	}
+	,readUTF: function() {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		return this.__input.readUTF();
+	}
+	,readUTFBytes: function(length) {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		return this.__input.readUTFBytes(length);
+	}
+	,writeBoolean: function(value) {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		this.__output.writeBoolean(value);
+	}
+	,writeByte: function(value) {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		this.__output.writeByte(value);
+	}
+	,writeBytes: function(bytes,offset,length) {
+		if(length == null) {
+			length = 0;
+		}
+		if(offset == null) {
+			offset = 0;
+		}
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		var offset1 = offset;
+		var length1 = length;
+		if(length1 == null) {
+			length1 = 0;
+		}
+		if(offset1 == null) {
+			offset1 = 0;
+		}
+		this.__output.writeBytes(bytes,offset1,length1);
+	}
+	,writeDouble: function(value) {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		this.__output.writeDouble(value);
+	}
+	,writeFloat: function(value) {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		this.__output.writeFloat(value);
+	}
+	,writeInt: function(value) {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		this.__output.writeInt(value);
+	}
+	,writeMultiByte: function(value,charSet) {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		this.__output.writeUTFBytes(value);
+	}
+	,writeObject: function(object) {
+		if(this.objectEncoding == 10) {
+			this.__output.writeUTF(haxe_Serializer.run(object));
+		}
+	}
+	,writeShort: function(value) {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		this.__output.writeShort(value);
+	}
+	,writeUnsignedInt: function(value) {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		this.__output.writeUnsignedInt(value);
+	}
+	,writeUTF: function(value) {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		this.__output.writeUTF(value);
+	}
+	,writeUTFBytes: function(value) {
+		if(this.__socket == null) {
+			throw haxe_Exception.thrown(new openfl_errors_IOError("Operation attempted on invalid socket."));
+		}
+		this.__output.writeUTFBytes(value);
+	}
+	,__cleanSocket: function() {
+		try {
+			this.__socket.close();
+		} catch( _g ) {
+		}
+		this.__socket = null;
+		this.__connected = false;
+		openfl_utils__$internal_Lib.current.removeEventListener("enterFrame",$bind(this,this.this_onEnterFrame));
+	}
+	,socket_onClose: function(_) {
+		this.dispatchEvent(new openfl_events_Event("close"));
+	}
+	,socket_onError: function(e) {
+		this.dispatchEvent(new openfl_events_Event("ioError"));
+	}
+	,socket_onMessage: function(msg) {
+		if(this.__input.position == openfl_utils_ByteArray.get_length(this.__input)) {
+			this.__input.clear();
+		}
+		if(typeof(msg.data) == "string") {
+			this.__input.position = openfl_utils_ByteArray.get_length(this.__input);
+			var cachePosition = this.__input.position;
+			this.__input.writeUTFBytes(msg.data);
+			this.__input.position = cachePosition;
+		} else {
+			var newData = openfl_utils_ByteArray.fromArrayBuffer(msg.data);
+			var bytes = this.__input;
+			var offset = openfl_utils_ByteArray.get_length(this.__input);
+			if(offset == null) {
+				offset = 0;
+			}
+			newData.readBytes(bytes,offset,0);
+		}
+		var this1 = this.__input;
+		if(UInt.gt(this1.length - this1.position,0)) {
+			var this1 = this.__input;
+			this.dispatchEvent(new openfl_events_ProgressEvent("socketData",false,false,UInt.toFloat(this1.length - this1.position),0));
+		}
+	}
+	,socket_onOpen: function(_) {
+		this.__connected = true;
+		this.dispatchEvent(new openfl_events_Event("connect"));
+	}
+	,this_onEnterFrame: function(event) {
+		if(this.__socket != null) {
+			this.flush();
+		}
+	}
+	,get_bytesAvailable: function() {
+		var this1 = this.__input;
+		return this1.length - this1.position;
+	}
+	,get_bytesPending: function() {
+		return openfl_utils_ByteArray.get_length(this.__output);
+	}
+	,get_connected: function() {
+		return this.__connected;
+	}
+	,get_endian: function() {
+		return this.__endian;
+	}
+	,set_endian: function(value) {
+		this.__endian = value;
+		if(this.__input != null) {
+			this.__input.__endian = value;
+		}
+		if(this.__output != null) {
+			this.__output.__endian = value;
+		}
+		return this.__endian;
+	}
+	,__class__: openfl_net_Socket
+	,__properties__: {set_endian:"set_endian",get_endian:"get_endian",get_connected:"get_connected",get_bytesPending:"get_bytesPending",get_bytesAvailable:"get_bytesAvailable"}
+});
 var openfl_net_URLLoader = function(request) {
 	openfl_events_EventDispatcher.call(this);
 	this.bytesLoaded = 0;
@@ -111329,6 +112708,18 @@ openfl_system_LoaderContext.prototype = {
 	,checkPolicyFile: null
 	,securityDomain: null
 	,__class__: openfl_system_LoaderContext
+};
+var openfl_system_Security = function() { };
+$hxClasses["openfl.system.Security"] = openfl_system_Security;
+openfl_system_Security.__name__ = "openfl.system.Security";
+openfl_system_Security.disableAVM1Loading = null;
+openfl_system_Security.exactSettings = null;
+openfl_system_Security.sandboxType = null;
+openfl_system_Security.allowDomain = function(p1,p2,p3,p4,p5) {
+};
+openfl_system_Security.allowInsecureDomain = function(p1,p2,p3,p4,p5) {
+};
+openfl_system_Security.loadPolicyFile = function(url) {
 };
 var openfl_system_SecurityDomain = function() {
 };
@@ -120442,6 +121833,66 @@ lime_utils_UInt16Array.BYTES_PER_ELEMENT = 2;
 lime_utils_UInt32Array.BYTES_PER_ELEMENT = 4;
 lime_utils_UInt8Array.BYTES_PER_ELEMENT = 1;
 lime_utils_UInt8ClampedArray.BYTES_PER_ELEMENT = 1;
+networking_Network.sessions = [];
+networking_sessions_client_Client.DEFAULT_IP = "127.0.0.1";
+networking_sessions_client_Client.DEFAULT_PORT = 9696;
+networking_sessions_client_Client.DEFAULT_UUID = null;
+networking_sessions_client_Client.DEFAULT_FLASH_POLICY_FILE_URL = null;
+networking_sessions_server_FlashPolicyServer.PORT = 9999;
+networking_sessions_server_Server.DEFAULT_IP = "127.0.0.1";
+networking_sessions_server_Server.DEFAULT_PORT = 9696;
+networking_sessions_server_Server.DEFAULT_MAX_CONNECTIONS = 24;
+networking_sessions_server_Server.DEFAULT_UUID = null;
+networking_sessions_server_Server.FLASH_POLICY_FILE_PORT = null;
+networking_sessions_server_Server.MAX_LISTEN_INCOMING_REQUESTS = 200;
+openfl_events_Event.ACTIVATE = "activate";
+openfl_events_Event.ADDED = "added";
+openfl_events_Event.ADDED_TO_STAGE = "addedToStage";
+openfl_events_Event.CANCEL = "cancel";
+openfl_events_Event.CHANGE = "change";
+openfl_events_Event.CLEAR = "clear";
+openfl_events_Event.CLOSE = "close";
+openfl_events_Event.COMPLETE = "complete";
+openfl_events_Event.CONNECT = "connect";
+openfl_events_Event.CONTEXT3D_CREATE = "context3DCreate";
+openfl_events_Event.COPY = "copy";
+openfl_events_Event.CUT = "cut";
+openfl_events_Event.DEACTIVATE = "deactivate";
+openfl_events_Event.ENTER_FRAME = "enterFrame";
+openfl_events_Event.EXIT_FRAME = "exitFrame";
+openfl_events_Event.FRAME_CONSTRUCTED = "frameConstructed";
+openfl_events_Event.FRAME_LABEL = "frameLabel";
+openfl_events_Event.FULLSCREEN = "fullScreen";
+openfl_events_Event.ID3 = "id3";
+openfl_events_Event.INIT = "init";
+openfl_events_Event.MOUSE_LEAVE = "mouseLeave";
+openfl_events_Event.OPEN = "open";
+openfl_events_Event.PASTE = "paste";
+openfl_events_Event.REMOVED = "removed";
+openfl_events_Event.REMOVED_FROM_STAGE = "removedFromStage";
+openfl_events_Event.RENDER = "render";
+openfl_events_Event.RESIZE = "resize";
+openfl_events_Event.SCROLL = "scroll";
+openfl_events_Event.SELECT = "select";
+openfl_events_Event.SELECT_ALL = "selectAll";
+openfl_events_Event.SOUND_COMPLETE = "soundComplete";
+openfl_events_Event.TAB_CHILDREN_CHANGE = "tabChildrenChange";
+openfl_events_Event.TAB_ENABLED_CHANGE = "tabEnabledChange";
+openfl_events_Event.TAB_INDEX_CHANGE = "tabIndexChange";
+openfl_events_Event.TEXTURE_READY = "textureReady";
+openfl_events_Event.UNLOAD = "unload";
+networking_utils_NetworkEvent.MESSAGE_SENT = "NETWORK_EVENT_MESSAGE_SENT";
+networking_utils_NetworkEvent.MESSAGE_RECEIVED = "NETWORK_EVENT_MESSAGE_RECEIVED";
+networking_utils_NetworkEvent.MESSAGE_SENT_FAILED = "NETWORK_EVENT_MESSAGE_SENT_FAILED";
+networking_utils_NetworkEvent.MESSAGE_BROADCAST = "NETWORK_EVENT_SV_MESSAGE_BROADCAST";
+networking_utils_NetworkEvent.MESSAGE_BROADCAST_FAILED = "NETWORK_EVENT_SV_MESSAGE_BROADCAST_FAILED";
+networking_utils_NetworkEvent.INIT_SUCCESS = "NETWORK_EVENT_INIT_SUCCESS";
+networking_utils_NetworkEvent.INIT_FAILURE = "NETWORK_EVENT_INIT_FAILURE";
+networking_utils_NetworkEvent.CLOSED = "NETWORK_EVENT_CLOSED";
+networking_utils_NetworkEvent.CONNECTED = "NETWORK_EVENT_CONNECTED";
+networking_utils_NetworkEvent.DISCONNECTED = "NETWORK_EVENT_DISCONNECTED";
+networking_utils_NetworkEvent.SERVER_FULL = "NETWORK_EVENT_SERVER_FULL";
+networking_utils_NetworkEvent.SECURITY_ERROR = "NETWORK_EVENT_SECURITY_ERROR";
 openfl_Lib.__lastTimerID = 0;
 openfl_Lib.__sentWarnings = new haxe_ds_StringMap();
 openfl_Lib.__timers = new haxe_ds_IntMap();
@@ -120708,42 +122159,6 @@ openfl_display3D_textures_TextureBase.__meta__ = { fields : { __textureContext :
 openfl_display3D_textures_TextureBase.__supportsBGRA = null;
 openfl_display3D_textures_Texture.__lowMemoryMode = false;
 openfl_errors_Error.DEFAULT_TO_STRING = "Error";
-openfl_events_Event.ACTIVATE = "activate";
-openfl_events_Event.ADDED = "added";
-openfl_events_Event.ADDED_TO_STAGE = "addedToStage";
-openfl_events_Event.CANCEL = "cancel";
-openfl_events_Event.CHANGE = "change";
-openfl_events_Event.CLEAR = "clear";
-openfl_events_Event.CLOSE = "close";
-openfl_events_Event.COMPLETE = "complete";
-openfl_events_Event.CONNECT = "connect";
-openfl_events_Event.CONTEXT3D_CREATE = "context3DCreate";
-openfl_events_Event.COPY = "copy";
-openfl_events_Event.CUT = "cut";
-openfl_events_Event.DEACTIVATE = "deactivate";
-openfl_events_Event.ENTER_FRAME = "enterFrame";
-openfl_events_Event.EXIT_FRAME = "exitFrame";
-openfl_events_Event.FRAME_CONSTRUCTED = "frameConstructed";
-openfl_events_Event.FRAME_LABEL = "frameLabel";
-openfl_events_Event.FULLSCREEN = "fullScreen";
-openfl_events_Event.ID3 = "id3";
-openfl_events_Event.INIT = "init";
-openfl_events_Event.MOUSE_LEAVE = "mouseLeave";
-openfl_events_Event.OPEN = "open";
-openfl_events_Event.PASTE = "paste";
-openfl_events_Event.REMOVED = "removed";
-openfl_events_Event.REMOVED_FROM_STAGE = "removedFromStage";
-openfl_events_Event.RENDER = "render";
-openfl_events_Event.RESIZE = "resize";
-openfl_events_Event.SCROLL = "scroll";
-openfl_events_Event.SELECT = "select";
-openfl_events_Event.SELECT_ALL = "selectAll";
-openfl_events_Event.SOUND_COMPLETE = "soundComplete";
-openfl_events_Event.TAB_CHILDREN_CHANGE = "tabChildrenChange";
-openfl_events_Event.TAB_ENABLED_CHANGE = "tabEnabledChange";
-openfl_events_Event.TAB_INDEX_CHANGE = "tabIndexChange";
-openfl_events_Event.TEXTURE_READY = "textureReady";
-openfl_events_Event.UNLOAD = "unload";
 openfl_events_AccelerometerEvent.UPDATE = "update";
 openfl_events_ActivityEvent.ACTIVITY = "activity";
 openfl_events_TextEvent.LINK = "link";
@@ -120816,6 +122231,7 @@ openfl_net_NetStream.__meta__ = { fields : { audioCodec : { SuppressWarnings : [
 openfl_net_SharedObject.defaultObjectEncoding = 10;
 openfl_net_SharedObjectFlushStatus.FLUSHED = 0;
 openfl_net_SharedObjectFlushStatus.PENDING = 1;
+openfl_net_Socket.__meta__ = { fields : { secure : { SuppressWarnings : ["checkstyle:FieldDocComment"]}}};
 openfl_net_URLLoaderDataFormat.BINARY = 0;
 openfl_net_URLLoaderDataFormat.TEXT = 1;
 openfl_net_URLLoaderDataFormat.VARIABLES = 2;
@@ -120829,6 +122245,10 @@ openfl_sensors_Accelerometer.defaultInterval = 34;
 openfl_sensors_Accelerometer.initialized = false;
 openfl_sensors_Accelerometer.supported = false;
 openfl_system_ApplicationDomain.currentDomain = new openfl_system_ApplicationDomain(null);
+openfl_system_Security.LOCAL_TRUSTED = "localTrusted";
+openfl_system_Security.LOCAL_WITH_FILE = "localWithFile";
+openfl_system_Security.LOCAL_WITH_NETWORK = "localWithNetwork";
+openfl_system_Security.REMOTE = "remote";
 openfl_system_SecurityDomain.__meta__ = { obj : { SuppressWarnings : ["checkstyle:UnnecessaryConstructor"]}};
 openfl_system_SecurityDomain.currentDomain = new openfl_system_SecurityDomain();
 openfl_system_System.useCodePage = false;
