@@ -60,11 +60,18 @@ class PlayState extends FlxState
 		// Creates the client
 		client = Network.registerSession(NetworkMode.CLIENT, {ip: '127.0.0.1', port: 8888, flash_policy_file_url: "http://127.0.0.1:9999/crossdomain.xml"});
 		// Event that starts when server sends a message
+		client.addEventListener(NetworkEvent.CONNECTED, function(event:NetworkEvent)
+		{
+			trace("Welcome to Hyperia!");
+			client.send({case1: "player_joined"});
+		});
 		client.addEventListener(NetworkEvent.MESSAGE_RECEIVED, function(event:NetworkEvent)
 		{
+			trace("Client received a message");
 			// If case is new player, add a player
-			if (event.data.case1 == "new player")
+			if (event.data.case1 == "new_player")
 			{
+				trace("Message: new player");
 				var playersArr:Array<FlxSprite> = event.data.players1;
 				for (i in playersArr)
 				{
