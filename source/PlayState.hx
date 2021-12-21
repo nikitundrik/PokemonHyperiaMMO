@@ -2,6 +2,7 @@ package;
 
 // Import libraries
 import Player;
+import flixel.FlxBasic;
 import flixel.FlxG;
 import flixel.FlxSprite;
 import flixel.FlxState;
@@ -13,6 +14,7 @@ import networking.Network;
 import networking.sessions.Session;
 import networking.utils.NetworkEvent;
 import networking.utils.NetworkMode;
+import openfl.display.Sprite;
 
 class PlayState extends FlxState
 {
@@ -63,23 +65,29 @@ class PlayState extends FlxState
 		client.addEventListener(NetworkEvent.CONNECTED, function(event:NetworkEvent)
 		{
 			trace("Welcome to Hyperia!");
-			client.send({case1: "player_joined"});
+			trace("X: " + player.x);
+			trace("Y: " + player.y);
+			client.send({case1: "player_joined", location_x: player.x, location_y: player.y});
 		});
+		otherPlayers = new FlxTypedGroup<FlxSprite>();
 		client.addEventListener(NetworkEvent.MESSAGE_RECEIVED, function(event:NetworkEvent)
 		{
 			trace("Client received a message");
 			// If case is new player, add a player
-			if (event.data.case1 == "new_player")
+			switch (event.data.case1)
 			{
-				trace("Message: new player");
-				var playersArr:Array<FlxSprite> = event.data.players1;
-				for (i in playersArr)
-				{
-					i.loadGraphic(AssetPaths.PlayerCharacter__png, true, 32, 32);
-					otherPlayers.add(i);
-				}
-				playerID = event.data.playerID;
-				trace("Player ID: " + playerID);
+				case "new_player":
+					trace("Message: new player");
+					var playersArr:Array<Array<Int>> = event.data.players;
+					for (i in playersArr)
+					{
+						trace(i[0] + " " + i[1]);
+						var playerSprite = new FlxSprite(i[0], i[1]);
+						playerSprite.loadGraphic(AssetPaths.PlayerCharacter__png, true, 32, 32);
+						otherPlayers.add(playerSprite);
+					}
+					playerID = event.data.playerID;
+					trace("Player ID: " + playerID);
 			}
 		});
 		client.start();
@@ -152,8 +160,19 @@ class PlayState extends FlxState
 			FlxG.overlap(player, skovonNPCs, talkWithNPC);
 			if (!FlxG.overlap(player, skovonNPCs))
 				talkText.visible = false;
-			client.send({id: playerID, x: player.x, y: player.y});
+			client.send({
+				case1: "",
+				id: playerID,
+				x: player.x,
+				y: player.y
+			});
 		}
+		client.send({
+			case1: "change_location",
+			location_x: player.x,
+			location_y: player.y,
+			id: playerID
+		});
 	}
 
 	// Function that initialises the dialogue
